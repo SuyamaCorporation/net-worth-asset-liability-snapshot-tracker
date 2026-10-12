@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Net Worth Snapshot Tracker</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen p-4">
+<div class="max-w-4xl mx-auto">
+  <h1 class="text-2xl font-bold mb-1 text-sky-400">Net Worth Asset & Liability Snapshot</h1>
+
+  <!-- Net Worth Banner -->
+  <div class="bg-gray-800 rounded-xl p-5 mb-5 flex flex-col sm:flex-row gap-4 items-center justify-between">
+    <div>
+      <div class="text-xs text-gray-400 mb-1">Net Worth</div>
+      <div id="netWorth" class="text-4xl font-bold text-sky-300">$0</div>
+    </div>
+    <div class="flex gap-6">
+      <div class="text-center">
+        <div class="text-xs text-gray-400 mb-1">Total Assets</div>
+        <div id="totalAssets" class="text-xl font-bold text-green-400">$0</div>
+      </div>
+      <div class="text-center">
+        <div class="text-xs text-gray-400 mb-1">Total Liabilities</div>
+        <div id="totalLiabilities" class="text-xl font-bold text-red-400">$0</div>
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <button onclick="exportSummary()" class="bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded text-sm font-semibold transition-colors">
+        Export
+      </button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+    <!-- Assets -->
+    <div class="bg-gray-800 rounded-xl p-5">
+      <h2 class="text-base font-semibold mb-3 text-green-300">Assets</h2>
+      <div class="flex gap-2 mb-3">
+        <input id="assetName" type="text" placeholder="Name" maxlength="40"
+          class="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-green-500 focus:outline-none" aria-label="Asset name">
+        <select id="assetCat" class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-green-500 focus:outline-none" aria-label="Asset category">
+          <option value="cash">Cash</option>
+          <option value="stocks">Stocks</option>
+          <option value="real-estate">Real Estate</option>
+          <option value="other">Other</option>
+        </select>
+        <input id="assetVal" type="number" placeholder="$" min="0" step="0.01"
+          class="w-24 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-green-500 focus:outline-none" aria-label="Asset value">
+        <button onclick="addAsset()" class="bg-green-700 hover:bg-green-600 px-3 py-1 rounded text-sm font-bold">+</button>
+      </div>
+      <div id="assetList" class="space-y-1 max-h-56 overflow-y-auto"></div>
+    </div>
+
+    <!-- Liabilities -->
+    <div class="bg-gray-800 rounded-xl p-5">
+      <h2 class="text-base font-semibold mb-3 text-red-300">Liabilities</h2>
+      <div class="flex gap-2 mb-3">
+        <input id="liabName" type="text" placeholder="Name" maxlength="40"
+          class="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-red-500 focus:outline-none" aria-label="Liability name">
+        <select id="liabCat" class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-red-500 focus:outline-none" aria-label="Liability category">
+          <option value="mortgage">Mortgage</option>
+          <option value="auto">Auto</option>
+          <option value="credit">Credit</option>
+          <option value="other">Other</option>
+        </select>
+        <input id="liabVal" type="number" placeholder="$" min="0" step="0.01"
+          class="w-24 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-red-500 focus:outline-none" aria-label="Liability balance">
+        <button onclick="addLiability()" class="bg-red-700 hover:bg-red-600 px-3 py-1 rounded text-sm font-bold">+</button>
+      </div>
+      <div id="liabList" class="space-y-1 max-h-56 overflow-y-auto"></div>
+    </div>
+  </div>
+
+  <!-- Pie Chart -->
+  <div class="bg-gray-800 rounded-xl p-5">
+    <h2 class="text-base font-semibold mb-3 text-sky-300">Asset Breakdown</h2>
+    <div class="flex flex-col sm:flex-row gap-5 items-center">
+      <canvas id="pieChart" width="220" height="220"
+        aria-label="Asset category pie chart" role="img"
+        class="bg-gray-900 rounded-xl flex-shrink-0"></canvas>
+      <div id="pieLegend" class="flex flex-col gap-2"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+let assets = JSON.parse(localStorage.getItem('nwAssets') || '[]');
+let liabilities = JSON.parse(localStorage.getItem('nwLiabilities') || '[]');
+
+const catColors = { cash:'#34d399', stocks:'#60a5fa', 'real-estate':'#a78bfa', other:'#fbbf24' };
+const catLabels = { cash:'Cash', stocks:'Stocks', 'real-estate':'Real Estate', other:'Other' };
+
+function fmtUSD(n) {
+  const abs = Math.abs(n);
+  const s = abs >= 1e6 ? (abs/1e6).toFixed(2)+'M' : abs >= 1e3 ? (abs/1e3).toFixed(1)+'K' : abs.toFixed(0);
+  return (n < 0 ? '-$' : '$') + s;
+}
+
+function addAsset() {
+  const name = document.getElementById('assetName').value.trim();
+  const cat  = document.getElementById('assetCat').value;
+  const val  = parseFloat(document.getElementById('assetVal').value);
+  if (!name || isNaN(val) || val < 0) return;
+  assets.push({ id: Date.now(), name, cat, val });
+  document.getElementById('assetName').value = '';
+  document.getElementById('assetVal').value = '';
+  save();
+}
+
+function addLiability() {
+  const name = document.getElementById('liabName').value.trim();
+  const cat  = document.getElementById('liabCat').value;
+  const val  = parseFloat(document.getElementById('liabVal').value);
+  if (!name || isNaN(val) || val < 0) return;
+  liabilities.push({ id: Date.now(), name, cat, val });
+  document.getElementById('liabName').value = '';
+  document.getElementById('liabVal').value = '';
+  save();
+}
+
+function removeAsset(id) { assets = assets.filter(a => a.id !== id); save(); }
+function removeLiability(id) { liabilities = liabilities.filter(a => a.id !== id); save(); }
+
+function save() {
+  localStorage.setItem('nwAssets', JSON.stringify(assets));
+  localStorage.setItem('nwLiabilities', JSON.stringify(liabilities));
+  render();
+}
+
+function renderList(items, containerId, removeFn) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'flex items-center justify-between bg-gray-700 rounded px-3 py-1 text-sm';
+    const left = document.createElement('span');
+    left.className = 'flex-1 text-gray-200 truncate';
+    left.textContent = escapeHtml(item.name);
+    const cat = document.createElement('span');
+    cat.className = 'text-xs text-gray-400 mx-2';
+    cat.textContent = catLabels[item.cat] || item.cat;
+    const val = document.createElement('span');
+    val.className = 'font-semibold text-white';
+    val.textContent = fmtUSD(item.val);
+    const del = document.createElement('button');
+    del.className = 'ml-2 text-gray-500 hover:text-red-400 text-xs';
+    del.textContent = '✕';
+    del.setAttribute('aria-label', 'Remove ' + item.name);
+    del.addEventListener('click', () => removeFn(item.id));
+    div.appendChild(left); div.appendChild(cat); div.appendChild(val); div.appendChild(del);
+    el.appendChild(div);
+  });
+}
+
+function render() {
+  const totalA = assets.reduce((s, a) => s + a.val, 0);
+  const totalL = liabilities.reduce((s, a) => s + a.val, 0);
+  const nw = totalA - totalL;
+
+  document.getElementById('totalAssets').textContent = fmtUSD(totalA);
+  document.getElementById('totalLiabilities').textContent = fmtUSD(totalL);
+  const nwEl = document.getElementById('netWorth');
+  nwEl.textContent = fmtUSD(nw);
+  nwEl.className = 'text-4xl font-bold ' + (nw >= 0 ? 'text-sky-300' : 'text-red-400');
+
+  renderList(assets, 'assetList', removeAsset);
+  renderList(liabilities, 'liabList', removeLiability);
+  drawPie(assets);
+}
+
+function drawPie(assets) {
+  const canvas = document.getElementById('pieChart');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, W, H);
+
+  const grouped = {};
+  assets.forEach(a => { grouped[a.cat] = (grouped[a.cat] || 0) + a.val; });
+  const total = Object.values(grouped).reduce((s, v) => s + v, 0);
+
+  if (total === 0) {
+    ctx.fillStyle = '#6b7280'; ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('No assets', W / 2, H / 2);
+    document.getElementById('pieLegend').innerHTML = '';
+    return;
+  }
+
+  const cx = W / 2, cy = H / 2, r = 85;
+  let angle = -Math.PI / 2;
+  const entries = Object.entries(grouped);
+
+  entries.forEach(([cat, val]) => {
+    const slice = (val / total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, angle, angle + slice);
+    ctx.closePath();
+    ctx.fillStyle = catColors[cat] || '#9ca3af';
+    ctx.fill();
+    ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 2; ctx.stroke();
+    angle += slice;
+  });
+
+  // Center hole
+  ctx.beginPath(); ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#111827'; ctx.fill();
+  ctx.fillStyle = '#e5e7eb'; ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(fmtUSD(total), cx, cy);
+
+  // Legend
+  const legend = document.getElementById('pieLegend');
+  legend.innerHTML = '';
+  entries.forEach(([cat, val]) => {
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-2';
+    const dot = document.createElement('span');
+    dot.className = 'w-3 h-3 rounded-full flex-shrink-0';
+    dot.style.backgroundColor = catColors[cat] || '#9ca3af';
+    const txt = document.createElement('span');
+    txt.className = 'text-sm text-gray-300';
+    txt.textContent = (catLabels[cat] || cat) + ': ' + fmtUSD(val) + ' (' + ((val/total)*100).toFixed(1) + '%)';
+    row.appendChild(dot); row.appendChild(txt);
+    legend.appendChild(row);
+  });
+}
+
+function exportSummary() {
+  const totalA = assets.reduce((s, a) => s + a.val, 0);
+  const totalL = liabilities.reduce((s, a) => s + a.val, 0);
+  const nw = totalA - totalL;
+  let text = `Net Worth Snapshot — ${new Date().toLocaleDateString()}\n`;
+  text += `${'='.repeat(40)}\n`;
+  text += `Total Assets:      ${fmtUSD(totalA)}\n`;
+  text += `Total Liabilities: ${fmtUSD(totalL)}\n`;
+  text += `Net Worth:         ${fmtUSD(nw)}\n\n`;
+  text += 'ASSETS:\n';
+  assets.forEach(a => { text += `  ${a.name} (${catLabels[a.cat]}): ${fmtUSD(a.val)}\n`; });
+  text += '\nLIABILITIES:\n';
+  liabilities.forEach(l => { text += `  ${l.name} (${l.cat}): ${fmtUSD(l.val)}\n`; });
+  const blob = new Blob([text], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'net-worth-snapshot.txt';
+  a.click();
+}
+
+// Enter key support
+['assetVal','liabVal'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') id.startsWith('asset') ? addAsset() : addLiability();
+  });
+});
+document.getElementById('assetVal').addEventListener('keydown', e => { if (e.key === 'Enter') addAsset(); });
+document.getElementById('liabVal').addEventListener('keydown', e => { if (e.key === 'Enter') addLiability(); });
+
+render();
+</script>
+</body>
+</html>
